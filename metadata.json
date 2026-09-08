@@ -1,0 +1,7 @@
+{
+  "uuid": "cursor-spotlight@star-barsuk",
+  "name": "Cursor Spotlight",
+  "description": "Dims the screen and leaves a soft-edged spotlight around the mouse pointer. Optional zoom mode.",
+  "shell-version": ["45", "46", "47", "48", "49", "50"],
+  "settings-schema": "org.gnome.shell.extensions.cursor-spotlight"
+}

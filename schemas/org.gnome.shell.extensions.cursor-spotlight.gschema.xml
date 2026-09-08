@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<schemalist gettext-domain="cursor-spotlight">
+
+  <schema id="org.gnome.shell.extensions.cursor-spotlight"
+          path="/org/gnome/shell/extensions/cursor-spotlight/">
+
+    <key name="toggle" type="as">
+      <default>['&lt;Ctrl&gt;F5']</default>
+      <summary>Toggle spotlight</summary>
+      <description>Keybinding that toggles the spotlight on and off</description>
+    </key>
+
+    <key name="toggle-zoom" type="as">
+      <default>['&lt;Ctrl&gt;F6']</default>
+      <summary>Toggle zoom</summary>
+      <description>Keybinding that toggles zoom mode while spotlight is active</description>
+    </key>
+
+    <key name="dim-opacity" type="i">
+      <default>75</default>
+      <range min="0" max="100"/>
+      <summary>Dim opacity</summary>
+      <description>Darkness of the overlay in percent (0 = transparent, 100 = fully black)</description>
+    </key>
+
+    <key name="focus-width" type="i">
+      <default>260</default>
+      <range min="1"/>
+      <summary>Focus width</summary>
+      <description>Width of the undimmed spotlight area in pixels</description>
+    </key>
+
+    <key name="focus-height" type="i">
+      <default>180</default>
+      <range min="1"/>
+      <summary>Focus height</summary>
+      <description>Height of the undimmed spotlight area in pixels</description>
+    </key>
+
+    <key name="edge-softness" type="i">
+      <default>56</default>
+      <range min="0"/>
+      <summary>Edge softness</summary>
+      <description>Soft transition width at the spotlight edge in pixels</description>
+    </key>
+
+    <key name="zoom-factor" type="d">
+      <default>1.25</default>
+      <range min="1.0" max="5.0"/>
+      <summary>Zoom factor</summary>
+      <description>Zoom multiplier (1.0 = no zoom, 2.0 = double size)</description>
+    </key>
+
+  </schema>
+
+</schemalist>
