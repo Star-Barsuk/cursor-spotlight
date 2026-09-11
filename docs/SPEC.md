@@ -184,11 +184,15 @@ are needed.
 
 - Read the pointer with `global.get_pointer()`, which returns an array whose
   first two elements are the `x` and `y` coordinates on the stage.
-- A repeating timer (interval 16 ms) runs while the extension is enabled.
-  The timer always updates the stored pointer position, but calls
-  `queue_repaint()` only when the spotlight is active.
-- Geometry: the overlay is sized to `global.stage.width` by
-  `global.stage.height` and positioned at `(0, 0)`.
+- A repeating timer (interval 16 ms) runs only while the spotlight is active.
+  Each tick updates the stored pointer position, but calls `queue_repaint()`
+  only when the pointer moved, the geometry changed, or settings changed.
+  No repaint happens while the overview or lock screen is visible.
+- Settings are cached on change (no GSettings I/O in the repaint path) and
+  the Cairo gradient is reused while `innerStop` is unchanged.
+- Geometry: the overlay covers the union of all `layoutManager.monitors`
+  (correct for monitors left/above the primary), falling back to the stage
+  size when monitor info is unavailable.
 
 ## 10. Keybinding
 

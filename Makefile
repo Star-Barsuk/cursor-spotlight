@@ -16,6 +16,7 @@ $(COMPILED_SCHEMAS): $(SCHEMAS)
 	glib-compile-schemas $(SCHEMA_DIR)
 
 install: build
+	rm -rf $(EXTDIR)
 	mkdir -p $(EXTDIR)
 	cp $(SRC) $(EXTDIR)/
 	cp -r $(SCHEMA_DIR) $(EXTDIR)/
@@ -31,6 +32,7 @@ disable:
 
 zip: build
 	rm -f $(ZIPFILE)
+	rm -rf _zipdir
 	mkdir -p _zipdir/$(UUID)
 	cp $(SRC) _zipdir/$(UUID)/
 	cp -r $(SCHEMA_DIR) _zipdir/$(UUID)/

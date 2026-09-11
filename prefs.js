@@ -6,6 +6,18 @@ import {ExtensionPreferences} from 'resource:///org/gnome/Shell/Extensions/js/ex
 export default class CursorSpotlightPreferences extends ExtensionPreferences {
     fillPreferencesWindow(window) {
         const settings = this.getSettings();
+        // Track settings signals so they can be disconnected when the
+        // prefs window closes (avoids duplicates on reopen).
+        const settingsIds = [];
+        window.connect('close-request', () => {
+            for (const id of settingsIds) {
+                try {
+                    settings.disconnect(id);
+                } catch (e) {
+                }
+            }
+            return false;
+        });
 
         const page = new Adw.PreferencesPage({
             title: 'General',
@@ -20,16 +32,16 @@ export default class CursorSpotlightPreferences extends ExtensionPreferences {
 
         this._addKeybindingRow(window, spotlightGroup, settings, 'toggle', 'Toggle spotlight');
 
-        this._addSpinRow(spotlightGroup, settings, 'dim-opacity',
+        this._addSpinRow(spotlightGroup, settings, settingsIds, 'dim-opacity',
             'Dim opacity', 'percent', 0, 100);
 
-        this._addSpinRow(spotlightGroup, settings, 'focus-width',
+        this._addSpinRow(spotlightGroup, settings, settingsIds, 'focus-width',
             'Focus width', 'pixels', 1, 10000);
 
-        this._addSpinRow(spotlightGroup, settings, 'focus-height',
+        this._addSpinRow(spotlightGroup, settings, settingsIds, 'focus-height',
             'Focus height', 'pixels', 1, 10000);
 
-        this._addSpinRow(spotlightGroup, settings, 'edge-softness',
+        this._addSpinRow(spotlightGroup, settings, settingsIds, 'edge-softness',
             'Edge softness', 'pixels', 0, 500);
 
         const zoomGroup = new Adw.PreferencesGroup({
@@ -39,7 +51,7 @@ export default class CursorSpotlightPreferences extends ExtensionPreferences {
 
         this._addKeybindingRow(window, zoomGroup, settings, 'toggle-zoom', 'Toggle zoom');
 
-        this._addDoubleSpinRow(zoomGroup, settings, 'zoom-factor',
+        this._addDoubleSpinRow(zoomGroup, settings, settingsIds, 'zoom-factor',
             'Zoom factor', 'x', 1.0, 5.0, 0.05);
     }
 
@@ -77,14 +89,16 @@ export default class CursorSpotlightPreferences extends ExtensionPreferences {
                 dialog.close();
                 return true;
             }
-            if (keyval === Gdk.KEY_BackSpace) {
+            // Only plain Backspace clears the binding, so Ctrl+Backspace
+            // and similar combinations can still be assigned.
+            const mods = state & Gtk.accelerator_get_default_mod_mask();
+            if (keyval === Gdk.KEY_BackSpace && mods === 0) {
                 settings.set_strv(key, []);
                 button.set_label(this._formatAccel([]));
                 dialog.close();
                 return true;
             }
 
-            const mods = state & Gtk.accelerator_get_default_mod_mask();
             if (!Gtk.accelerator_valid(keyval, mods))
                 return true;
 
@@ -111,7 +125,7 @@ export default class CursorSpotlightPreferences extends ExtensionPreferences {
         return strv[0];
     }
 
-    _addSpinRow(group, settings, key, title, subtitle, min, max) {
+    _addSpinRow(group, settings, settingsIds, key, title, subtitle, min, max) {
         const adjustment = new Gtk.Adjustment({
             lower: min,
             upper: max,
@@ -132,15 +146,15 @@ export default class CursorSpotlightPreferences extends ExtensionPreferences {
                 return;
             settings.set_int(key, Math.round(adjustment.get_value()));
         });
-        settings.connect(`changed::${key}`, () => {
+        settingsIds.push(settings.connect(`changed::${key}`, () => {
             updating = true;
             row.set_value(settings.get_int(key));
             updating = false;
-        });
+        }));
         group.add(row);
     }
 
-    _addDoubleSpinRow(group, settings, key, title, subtitle, min, max, step) {
+    _addDoubleSpinRow(group, settings, settingsIds, key, title, subtitle, min, max, step) {
         const adjustment = new Gtk.Adjustment({
             lower: min,
             upper: max,
@@ -161,11 +175,11 @@ export default class CursorSpotlightPreferences extends ExtensionPreferences {
                 return;
             settings.set_double(key, adjustment.get_value());
         });
-        settings.connect(`changed::${key}`, () => {
+        settingsIds.push(settings.connect(`changed::${key}`, () => {
             updating = true;
             row.set_value(settings.get_double(key));
             updating = false;
-        });
+        }));
         group.add(row);
     }
 }
