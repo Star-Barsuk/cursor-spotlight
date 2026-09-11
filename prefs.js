@@ -1,6 +1,5 @@
 import Adw from 'gi://Adw';
-import Gio from 'gi://Gio';
-import GLib from 'gi://GLib';
+import Gdk from 'gi://Gdk';
 import Gtk from 'gi://Gtk';
 import {ExtensionPreferences} from 'resource:///org/gnome/Shell/Extensions/js/extensions/prefs.js';
 
@@ -19,7 +18,7 @@ export default class CursorSpotlightPreferences extends ExtensionPreferences {
         });
         page.add(spotlightGroup);
 
-        this._addKeybindingRow(spotlightGroup, settings, 'toggle', 'Toggle spotlight');
+        this._addKeybindingRow(window, spotlightGroup, settings, 'toggle', 'Toggle spotlight');
 
         this._addSpinRow(spotlightGroup, settings, 'dim-opacity',
             'Dim opacity', 'percent', 0, 100);
@@ -38,13 +37,13 @@ export default class CursorSpotlightPreferences extends ExtensionPreferences {
         });
         page.add(zoomGroup);
 
-        this._addKeybindingRow(zoomGroup, settings, 'toggle-zoom', 'Toggle zoom');
+        this._addKeybindingRow(window, zoomGroup, settings, 'toggle-zoom', 'Toggle zoom');
 
         this._addDoubleSpinRow(zoomGroup, settings, 'zoom-factor',
             'Zoom factor', 'x', 1.0, 5.0, 0.05);
     }
 
-    _addKeybindingRow(group, settings, key, title) {
+    _addKeybindingRow(window, group, settings, key, title) {
         const row = new Adw.ActionRow({title});
         const button = new Gtk.Button({
             label: this._formatAccel(settings.get_strv(key)),
@@ -52,32 +51,8 @@ export default class CursorSpotlightPreferences extends ExtensionPreferences {
         });
         button.add_css_class('flat');
 
-        const dialog = new Gtk.ShortcutDialog({
-            modal: true,
-            transient_for: group.get_root(),
-        });
-
-        const controller = new Gtk.ShortcutController({
-            scope: Gtk.ShortcutScope.MANAGED,
-        });
-        dialog.add_controller(controller);
-
-        const shortcutLabel = new Gtk.ShortcutLabel({
-            accelerator: this._formatAccel(settings.get_strv(key)),
-        });
-        dialog.set_child(shortcutLabel);
-
-        controller.connect('accel-changed', (_ctrl, accel) => {
-            settings.set_strv(key, [accel]);
-            button.set_label(this._formatAccel(settings.get_strv(key)));
-            shortcutLabel.set_accelerator(accel);
-            dialog.close();
-            return true;
-        });
-
         button.connect('clicked', () => {
-            shortcutLabel.set_accelerator(this._formatAccel(settings.get_strv(key)));
-            dialog.present();
+            this._showCaptureDialog(window, settings, key, title, button);
         });
 
         row.add_suffix(button);
@@ -85,11 +60,50 @@ export default class CursorSpotlightPreferences extends ExtensionPreferences {
         group.add(row);
     }
 
+    _showCaptureDialog(window, settings, key, title, button) {
+        const dialog = new Adw.MessageDialog({
+            transient_for: window,
+            modal: true,
+            heading: `Set ${title}`,
+            body: 'Press a key combination, Esc to cancel, Backspace to clear',
+        });
+        dialog.add_response('cancel', 'Cancel');
+
+        const keyController = new Gtk.EventControllerKey();
+        dialog.add_controller(keyController);
+
+        keyController.connect('key-pressed', (_ctrl, keyval, _keycode, state) => {
+            if (keyval === Gdk.KEY_Escape) {
+                dialog.close();
+                return true;
+            }
+            if (keyval === Gdk.KEY_BackSpace) {
+                settings.set_strv(key, []);
+                button.set_label(this._formatAccel([]));
+                dialog.close();
+                return true;
+            }
+
+            const mods = state & Gtk.accelerator_get_default_mod_mask();
+            if (!Gtk.accelerator_valid(keyval, mods))
+                return true;
+
+            const accel = Gtk.accelerator_name(keyval, mods);
+            settings.set_strv(key, [accel]);
+            button.set_label(this._formatAccel([accel]));
+            dialog.close();
+            return true;
+        });
+
+        dialog.connect('response', () => dialog.close());
+        dialog.present();
+    }
+
     _formatAccel(strv) {
-        if (!strv || strv.length === 0) return '';
+        if (!strv || strv.length === 0) return 'Disabled';
         try {
-            const [keyval, mods] = Gtk.accelerator_parse(strv[0]);
-            if (keyval !== 0)
+            const [ok, keyval, mods] = Gtk.accelerator_parse(strv[0]);
+            if (ok && keyval !== 0)
                 return Gtk.accelerator_get_label(keyval, mods);
         } catch (e) {
             log(`Failed to parse accelerator "${strv[0]}": ${e.message}`);
@@ -97,35 +111,61 @@ export default class CursorSpotlightPreferences extends ExtensionPreferences {
         return strv[0];
     }
 
-    _addSpinRow(group, settings, key, title, suffix, min, max) {
+    _addSpinRow(group, settings, key, title, subtitle, min, max) {
+        const adjustment = new Gtk.Adjustment({
+            lower: min,
+            upper: max,
+            step_increment: 1,
+            page_increment: 10,
+            value: settings.get_int(key),
+        });
         const row = new Adw.SpinRow({
             title,
-            subtitle: suffix,
-            adjustment: new Gtk.Adjustment({
-                lower: min,
-                upper: max,
-                step_increment: 1,
-                page_increment: 10,
-                value: settings.get_int(key),
-            }),
+            subtitle,
+            adjustment,
+            digits: 0,
+            numeric: true,
         });
-        settings.bind(key, row, 'value', Gio.SettingsBindFlags.DEFAULT);
+        let updating = false;
+        adjustment.connect('value-changed', () => {
+            if (updating)
+                return;
+            settings.set_int(key, Math.round(adjustment.get_value()));
+        });
+        settings.connect(`changed::${key}`, () => {
+            updating = true;
+            row.set_value(settings.get_int(key));
+            updating = false;
+        });
         group.add(row);
     }
 
-    _addDoubleSpinRow(group, settings, key, title, suffix, min, max, step) {
+    _addDoubleSpinRow(group, settings, key, title, subtitle, min, max, step) {
+        const adjustment = new Gtk.Adjustment({
+            lower: min,
+            upper: max,
+            step_increment: step,
+            page_increment: step * 5,
+            value: settings.get_double(key),
+        });
         const row = new Adw.SpinRow({
             title,
-            subtitle: suffix,
-            adjustment: new Gtk.Adjustment({
-                lower: min,
-                upper: max,
-                step_increment: step,
-                page_increment: 0.25,
-                value: settings.get_double(key),
-            }),
+            subtitle,
+            adjustment,
+            digits: 2,
+            numeric: true,
         });
-        settings.bind(key, row, 'value', Gio.SettingsBindFlags.DEFAULT);
+        let updating = false;
+        adjustment.connect('value-changed', () => {
+            if (updating)
+                return;
+            settings.set_double(key, adjustment.get_value());
+        });
+        settings.connect(`changed::${key}`, () => {
+            updating = true;
+            row.set_value(settings.get_double(key));
+            updating = false;
+        });
         group.add(row);
     }
 }

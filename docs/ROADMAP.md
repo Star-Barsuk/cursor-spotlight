@@ -11,14 +11,14 @@
 
 ## Phase 2: Zoom
 
-- [ ] Add `toggle-zoom` keybinding setting (default `<Ctrl>F6`)
-- [ ] Add `zoom-factor` setting (1.0–5.0, default 1.25)
-- [ ] Register zoom hotkey in extension entry
-- [ ] Implement zoom toggle state
-- [ ] Apply zoom transform in Cairo rendering (centered on pointer)
-- [ ] Add zoom toggle to preferences UI
-- [ ] Test: zoom activates only when spotlight is active
-- [ ] Test: both hotkeys can share the same key combination
+- [x] Add `toggle-zoom` keybinding setting (default `<Ctrl>F6`)
+- [x] Add `zoom-factor` setting (1.0–5.0, default 1.25)
+- [x] Register zoom hotkey in extension entry
+- [x] Implement zoom toggle state
+- [x] Live magnifier lens via `Clutter.Clone` of `global.window_group` (Cairo stage readout is not available)
+- [x] Add zoom toggle to preferences UI
+- [x] Test: zoom activates only when spotlight is active
+- [x] Test: both hotkeys can share the same key combination
 
 ## Phase 3: Polish
 

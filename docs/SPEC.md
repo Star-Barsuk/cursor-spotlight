@@ -108,19 +108,27 @@ active, the overlay is shown; when inactive, it is hidden.
 ### Zoom hotkey press
 
 When the spotlight is active, pressing the zoom hotkey toggles zoom mode.
-Zoom mode magnifies the spotlighted area by the configured `zoom-factor`
-(e.g. 1.25 = 1.25x). The zoom applies to the rendered spotlight region; the
-rest of the screen remains dimmed at the same opacity.
+Zoom mode shows a live magnified lens of the spotlighted area: a
+`Clutter.Clone` of `global.window_group` (app windows + background, but not
+the dim overlay itself, so there is no feedback loop) sits directly below the
+overlay. The overlay dims the lens everywhere except the spotlight hole, where
+the magnified content shows through. The lens is GPU-composited: pointer
+tracking only updates its scale/position, never repaints it. The lens is
+rectangular (`focus-width` by `focus-height`, centered on the pointer) and is
+hidden together with the overlay while the overview is visible.
 
 When the spotlight is inactive, pressing the zoom hotkey has no effect.
 
 ### While active
 
 - The overlay is visible and covers the whole stage.
+- The overlay is hidden while the overview is visible (Super / Show Apps)
+  and reshown when the overview hides, without changing the toggle state.
 - Every tick, the pointer position is read and the overlay repaints so the
   spotlight hole follows the pointer.
-- If zoom is active, the spotlighted area is rendered with the zoom transform
-  applied before clipping, producing a magnified view of the content beneath.
+- If zoom is active, a live `Clutter.Clone` lens below the overlay shows the
+  spotlighted area magnified by `zoom-factor`; the rest of the screen
+  (including the lens edges outside the hole) remains dimmed.
 - Settings changes (dim level, focus size, edge softness, zoom factor) trigger
   a repaint.
 
@@ -159,6 +167,11 @@ If zoom is active, apply a second pass: save the context, translate to the
 pointer, scale by `zoom-factor`, translate back, and redraw the spotlight
 content from the stage texture. The dim layer and the gradient mask remain
 unchanged; only the content inside the spotlight hole is magnified.
+
+NOTE: this paragraph describes the original Cairo-based idea, which is not
+implementable (no public stage-to-cairo API exists). The actual implementation
+uses a `Clutter.Clone` lens actor below the overlay, as described in
+"Zoom hotkey press" above.
 
 Because `DEST_OUT` removes destination pixels proportionally to source alpha,
 the opaque center fully clears the dim layer (revealing the screen) while the
@@ -266,6 +279,8 @@ Provide a `Makefile` with these targets:
    without conflicts.
 9. The overlay does not intercept mouse clicks or keyboard input.
 10. Disabling the extension leaves no orphan actors, timers, or keybindings.
+11. Opening the overview (Super / Show Apps) never shows the overlay when the
+    spotlight is off, and hides it while the overview is visible when on.
 
 ## 14. Implementation constraints
 
