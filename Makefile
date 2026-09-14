@@ -5,8 +5,12 @@ ZIPFILE = $(UUID).zip
 SCHEMAS = schemas/org.gnome.shell.extensions.cursor-spotlight.gschema.xml
 COMPILED_SCHEMAS = schemas/gschemas.compiled
 
-SRC = extension.js prefs.js metadata.json
+JS_SRC = extension.js prefs.js
+SRC = $(JS_SRC) metadata.json
+LIB = lib
+LIB_SRC = $(wildcard $(LIB)/*.js)
 SCHEMA_DIR = schemas
+LINT = tools/syntax-check.mjs
 
 .PHONY: build install uninstall enable disable zip lint clean
 
@@ -19,6 +23,7 @@ install: build
 	rm -rf $(EXTDIR)
 	mkdir -p $(EXTDIR)
 	cp $(SRC) $(EXTDIR)/
+	cp -r $(LIB) $(EXTDIR)/
 	cp -r $(SCHEMA_DIR) $(EXTDIR)/
 
 uninstall:
@@ -35,21 +40,20 @@ zip: build
 	rm -rf _zipdir
 	mkdir -p _zipdir/$(UUID)
 	cp $(SRC) _zipdir/$(UUID)/
+	cp -r $(LIB) _zipdir/$(UUID)/
 	cp -r $(SCHEMA_DIR) _zipdir/$(UUID)/
 	cd _zipdir && zip -qr ../$(ZIPFILE) $(UUID)
 	rm -rf _zipdir
 
 lint:
 	@if command -v gjs >/dev/null 2>&1; then \
-		for f in $(SRC); do \
-			echo "Checking $$f syntax..."; \
-			gjs -c "$$f" 2>/dev/null || echo "  (skipped: external imports)"; \
-		done; \
+		echo "Syntax check (SpiderMonkey):"; \
+		gjs -m $(LINT) $(JS_SRC) $(LIB_SRC); \
 	else \
 		echo "gjs not found, skipping lint"; \
 	fi
 	@if command -v eslint >/dev/null 2>&1; then \
-		eslint $(SRC); \
+		eslint $(JS_SRC) $(LIB_SRC); \
 	fi
 
 clean:

@@ -10,6 +10,12 @@
       <description>Keybinding that toggles the spotlight on and off</description>
     </key>
 
+    <key name="hold" type="as">
+      <default>['&lt;Ctrl&gt;&lt;Shift&gt;F5']</default>
+      <summary>Hold spotlight</summary>
+      <description>Keybinding that shows the spotlight only while held. Requires GNOME Shell 48+. Empty disables it</description>
+    </key>
+
     <key name="toggle-zoom" type="as">
       <default>['&lt;Ctrl&gt;F6']</default>
       <summary>Toggle zoom</summary>
@@ -23,18 +29,11 @@
       <description>Darkness of the overlay in percent (0 = transparent, 100 = fully black)</description>
     </key>
 
-    <key name="focus-width" type="i">
-      <default>260</default>
+    <key name="focus-radius" type="i">
+      <default>130</default>
       <range min="1"/>
-      <summary>Focus width</summary>
-      <description>Width of the undimmed spotlight area in pixels</description>
-    </key>
-
-    <key name="focus-height" type="i">
-      <default>180</default>
-      <range min="1"/>
-      <summary>Focus height</summary>
-      <description>Height of the undimmed spotlight area in pixels</description>
+      <summary>Focus radius</summary>
+      <description>Radius of the circular undimmed spotlight area in pixels</description>
     </key>
 
     <key name="edge-softness" type="i">

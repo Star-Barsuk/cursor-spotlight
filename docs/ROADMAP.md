@@ -2,7 +2,7 @@
 
 ## Phase 1: Core spotlight
 
-- [x] Settings schema (toggle, dim-opacity, focus-width, focus-height, edge-softness)
+- [x] Settings schema (toggle, dim-opacity, focus-radius, edge-softness)
 - [x] Overlay rendering with soft-edged spotlight
 - [x] Pointer tracking loop
 - [x] Hotkey toggle
@@ -20,7 +20,16 @@
 - [x] Test: zoom activates only when spotlight is active
 - [x] Test: both hotkeys can share the same key combination
 
-## Phase 3: Polish
+## Phase 3: Circular lens and version-proofing
+
+- [x] Circular spotlight (`focus-radius`)
+- [x] Clip the zoom lens to the circle with a GPU fragment shader
+- [x] `lib/lens-effect.js`: `Shell.GLSLEffect` (45-50) and `Clutter.ShaderEffect` (51+) behind feature detection
+- [x] `lib/shell-version.js`: shared version helpers
+- [x] `Adw.AlertDialog` preference dialog with `Adw.MessageDialog` fallback
+- [x] Declare GNOME Shell 51 support
+
+## Phase 4: Polish
 
 - [ ] Smooth zoom transition (optional, future)
 - [ ] Per-monitor support (optional, future)

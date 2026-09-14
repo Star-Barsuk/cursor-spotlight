@@ -5,9 +5,15 @@ import Meta from 'gi://Meta';
 import Shell from 'gi://Shell';
 import St from 'gi://St';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
+import * as Config from 'resource:///org/gnome/shell/misc/config.js';
 import {Extension} from 'resource:///org/gnome/shell/extensions/extension.js';
 
+import {createLensMaskEffect} from './lib/lens-effect.js';
+import {HOLD_MIN_SHELL_MAJOR, supportsHold} from './lib/shell-version.js';
+
 const TIMER_INTERVAL_MS = 16;
+
+const TRIGGER_RELEASE = Meta.KeyBindingFlags.TRIGGER_RELEASE ?? 0;
 
 // Hardening limits for values that can arrive via dconf (schema has
 // no upper bound for focus/edge). prefs.js caps at the same numbers.
@@ -35,7 +41,12 @@ function clampDouble(value, min, max, fallback) {
 class SpotlightOverlay {
     constructor(settings) {
         this._settings = settings;
+        // Effective on/off state. It is the union of the latched toggle
+        // state and the momentary hold state, so the two hotkeys can be
+        // used together without cancelling each other.
         this._active = false;
+        this._toggleActive = false;
+        this._holdActive = false;
         this._zoomActive = false;
         this._pointerX = 0;
         this._pointerY = 0;
@@ -55,8 +66,8 @@ class SpotlightOverlay {
             y: 0,
         });
         this._actor.hide();
-        this._addToChrome();
         this._createLens();
+        this._mountOverlay();
         this._refreshPointer();
 
         this._monitorsChangedId = Main.layoutManager.connect('monitors-changed', () => {
@@ -77,7 +88,12 @@ class SpotlightOverlay {
         // overview hides, but only if the spotlight is still active.
         // The zoom lens follows the same rule. The same applies to the
         // lock screen.
+        //
+        // Opening the overview or locking the screen can swallow the key
+        // release of a held hotkey, which would leave the hold state stuck
+        // on. Drop it here; the latched toggle state is left untouched.
         this._overviewShowingId = Main.overview.connect('showing', () => {
+            this._releaseHold();
             this._actor.hide();
             this._lens.hide();
         });
@@ -93,6 +109,7 @@ class SpotlightOverlay {
         if (Main.screenShield) {
             try {
                 this._screenLockedId = Main.screenShield.connect('locked', () => {
+                    this._releaseHold();
                     this._actor.hide();
                     if (this._lens)
                         this._lens.hide();
@@ -119,51 +136,64 @@ class SpotlightOverlay {
         this._connectSettings();
     }
 
-    _addToChrome() {
-        // Plain addChrome on purpose: no trackFullscreen (the layout
-        // manager would own actor.visible and resurrect a hidden overlay
-        // on overview show/hide) and no affectsInputRegion (removed in
-        // GNOME 50 with X11 support; the actor is reactive:false anyway).
-        Main.layoutManager.addChrome(this._actor);
+    _mountOverlay() {
+        // Mount on the stage above the lens (not as layout chrome):
+        // the lens clones Main.uiGroup, so neither the lens nor the
+        // overlay may live inside uiGroup, otherwise the clone would
+        // show them (feedback loop). Visibility stays fully ours:
+        // reactive:false + explicit hide/show on overview and lock.
+        global.stage.add_child(this._actor);
+        global.stage.set_child_above_sibling(this._actor, this._lens);
+        Shell.util_set_hidden_from_pick(this._actor, true);
     }
 
     _createLens() {
-        // Zoom lens: a live GPU-composited clone of the window group
-        // (app windows + background, but not the dim overlay itself,
-        // so there is no feedback loop). It sits directly below the
-        // overlay: the overlay dims the lens everywhere except the
-        // spotlight hole, where the magnified content shows through.
+        // Zoom lens: a live GPU-composited clone of Main.uiGroup
+        // (app windows + background + panels), mirroring the shell's own
+        // magnifier (ui/magnifier.js), which is the proven-working clone
+        // source on Wayland. The lens lives on global.stage, above
+        // uiGroup and below the overlay: the overlay dims the lens
+        // everywhere except the spotlight hole, where the magnified
+        // content shows through. Mounting on the stage (not in uiGroup)
+        // keeps the lens and the overlay out of the clone itself, so
+        // there is no feedback loop.
         this._lens = new Clutter.Actor({
             reactive: false,
             clip_to_allocation: true,
             visible: false,
         });
-        this._lensClone = new Clutter.Clone({source: global.window_group});
+        this._lensClone = new Clutter.Clone({
+            source: Main.layoutManager.uiGroup,
+            clip_to_allocation: true,
+        });
+        this._lensClone.reactive = false;
         this._lensClone.set_pivot_point(0, 0);
         this._lens.add_child(this._lensClone);
-        Main.layoutManager.uiGroup.add_child(this._lens);
-        Main.layoutManager.uiGroup.set_child_below_sibling(this._lens, this._actor);
+        // Clip the rectangular clone to the spotlight circle in the GPU.
+        // Without it only the partially transparent dim layer hides the
+        // clone edges, so the lens shows up as a rectangle.
+        this._lensMask = createLensMaskEffect();
+        if (this._lensMask)
+            this._lens.add_effect(this._lensMask);
+        global.stage.add_child(this._lens);
+        Shell.util_set_hidden_from_pick(this._lens, true);
+        this._applyMask();
     }
 
     _reloadSettings() {
         // Cache settings so the 60fps repaint path does no GSettings I/O.
         // Values are clamped: dconf can hold anything within the schema
         // range (which has no upper bound for focus/edge).
-        let dim, fw, fh, edge, zoom;
+        let dim, radius, edge, zoom;
         try {
             dim = this._settings.get_int('dim-opacity');
         } catch (e) {
             dim = 75;
         }
         try {
-            fw = this._settings.get_int('focus-width');
+            radius = this._settings.get_int('focus-radius');
         } catch (e) {
-            fw = 260;
-        }
-        try {
-            fh = this._settings.get_int('focus-height');
-        } catch (e) {
-            fh = 180;
+            radius = 130;
         }
         try {
             edge = this._settings.get_int('edge-softness');
@@ -176,12 +206,35 @@ class SpotlightOverlay {
             zoom = 1.25;
         }
         this._dimOpacity = clampInt(dim, DIM_MIN, DIM_MAX, 75) / 100;
-        this._focusW = clampInt(fw, FOCUS_MIN, FOCUS_MAX, 260);
-        this._focusH = clampInt(fh, FOCUS_MIN, FOCUS_MAX, 180);
+        this._focusRadius = clampInt(radius, FOCUS_MIN, FOCUS_MAX, 130);
         this._edgeSoftness = clampInt(edge, EDGE_MIN, EDGE_MAX, 56);
         this._zoomFactor = clampDouble(zoom, ZOOM_MIN, ZOOM_MAX, 1.25);
         // Gradient depends only on innerStop: invalidate the cache.
         this._cachedInnerStop = -1;
+    }
+
+    // Feather and inner stop shared by the overlay hole and the lens mask
+    // so their soft edges line up. The ratios are scale-independent, so
+    // the same numbers work for logical and surface pixels.
+    _maskParams() {
+        const radius = Math.max(1, this._focusRadius);
+        const feather = Math.min(radius, Math.max(0, this._edgeSoftness));
+        return {
+            radius,
+            innerStop: Math.max(0, 1 - feather / radius),
+        };
+    }
+
+    _applyMask() {
+        if (!this._lensMask)
+            return;
+        const {radius, innerStop} = this._maskParams();
+        this._lensMask.setMask({
+            width: radius * 2,
+            height: radius * 2,
+            radius,
+            innerStop,
+        });
     }
 
     _isObscured() {
@@ -232,22 +285,20 @@ class SpotlightOverlay {
     _updateLens(force = false) {
         if (!this._active || !this._zoomActive)
             return;
-        const w = Math.max(1, this._focusW);
-        const h = Math.max(1, this._focusH);
+        const r = Math.max(1, this._focusRadius);
+        // The lens is exactly the spotlight diameter. The shader mask
+        // fades the clone to zero at the circle edge, so no overscan is
+        // needed to hide a hard rectangular seam.
+        const size = r * 2;
         const z = this._zoomFactor;
-        // Overscan by the feather size so the hard rectangle edge of the
-        // clone never shows as a seam inside the soft ellipse edge.
-        const overscan = Math.min(Math.min(w, h) / 2, this._edgeSoftness + 2);
-        const lw = w + overscan * 2;
-        const lh = h + overscan * 2;
-        const key = `${Math.round(this._pointerX)}|${Math.round(this._pointerY)}|${lw}|${lh}|${z}`;
+        const key = `${Math.round(this._pointerX)}|${Math.round(this._pointerY)}|${size}|${z}`;
         if (!force && key === this._lastLensKey)
             return;
         this._lastLensKey = key;
-        this._lens.set_position(this._pointerX - lw / 2, this._pointerY - lh / 2);
-        this._lens.set_size(lw, lh);
+        this._lens.set_position(this._pointerX - size / 2, this._pointerY - size / 2);
+        this._lens.set_size(size, size);
         this._lensClone.set_scale(z, z);
-        this._lensClone.set_position(lw / 2 - this._pointerX * z, lh / 2 - this._pointerY * z);
+        this._lensClone.set_position(size / 2 - this._pointerX * z, size / 2 - this._pointerY * z);
     }
 
     _syncLens(force = false) {
@@ -264,23 +315,18 @@ class SpotlightOverlay {
             this._reloadSettings();
             if (this._active) this._actor.queue_repaint();
         });
-        this._focusWidthId = this._settings.connect('changed::focus-width', () => {
+        this._focusRadiusId = this._settings.connect('changed::focus-radius', () => {
             this._reloadSettings();
             this._lastPaintX = null;
             this._lastLensKey = null;
             if (this._active) this._actor.queue_repaint();
-            this._updateLens();
-        });
-        this._focusHeightId = this._settings.connect('changed::focus-height', () => {
-            this._reloadSettings();
-            this._lastPaintX = null;
-            this._lastLensKey = null;
-            if (this._active) this._actor.queue_repaint();
+            this._applyMask();
             this._updateLens();
         });
         this._edgeSoftnessId = this._settings.connect('changed::edge-softness', () => {
             this._reloadSettings();
             if (this._active) this._actor.queue_repaint();
+            this._applyMask();
             this._updateLens();
         });
         this._zoomFactorId = this._settings.connect('changed::zoom-factor', () => {
@@ -292,8 +338,8 @@ class SpotlightOverlay {
     _disconnectSettings() {
         if (!this._settings)
             return;
-        for (const id of [this._dimOpacityId, this._focusWidthId,
-            this._focusHeightId, this._edgeSoftnessId, this._zoomFactorId]) {
+        for (const id of [this._dimOpacityId, this._focusRadiusId,
+            this._edgeSoftnessId, this._zoomFactorId]) {
             if (id) {
                 try {
                     this._settings.disconnect(id);
@@ -303,14 +349,9 @@ class SpotlightOverlay {
             }
         }
         this._dimOpacityId = null;
-        this._focusWidthId = null;
-        this._focusHeightId = null;
+        this._focusRadiusId = null;
         this._edgeSoftnessId = null;
         this._zoomFactorId = null;
-    }
-
-    get active() {
-        return this._active;
     }
 
     _stageBounds() {
@@ -338,23 +379,65 @@ class SpotlightOverlay {
     }
 
     toggle() {
-        this._active = !this._active;
-        if (!this._active) {
-            this._zoomActive = false;
-            this._stopTimer();
-            this._lastPaintX = null;
-            this._lastPaintY = null;
-            this._lastLensKey = null;
-        } else {
-            // Read the pointer now so the first visible frame already has
-            // the hole under the cursor (no flash at the old position).
-            this._refreshPointer();
-            this._lastPaintX = null;
-            this._lastPaintY = null;
-            this._lastLensKey = null;
-            this._updateSize();
-            this._ensureTimer();
-        }
+        this._toggleActive = !this._toggleActive;
+        this._applyActive();
+        // One-line usage log: aids field diagnosis without spamming
+        // (the 60fps pointer path stays silent).
+        console.log(`[spotlight] toggle latched=${this._toggleActive} active=${this._active}`);
+    }
+
+    setHoldActive(active) {
+        active = !!active;
+        if (active === this._holdActive)
+            return;
+        this._holdActive = active;
+        this._applyActive();
+        console.log(`[spotlight] hold ${active ? 'pressed' : 'released'} active=${this._active}`);
+    }
+
+    _releaseHold() {
+        // Safety net for a swallowed key release (overview, lock screen):
+        // clear the momentary state without disturbing the latch.
+        if (!this._holdActive)
+            return;
+        this._holdActive = false;
+        this._applyActive();
+        console.log(`[spotlight] hold state cleared active=${this._active}`);
+    }
+
+    _applyActive() {
+        // The spotlight is on while either the toggle is latched or the
+        // hold hotkey is down. Only the transitions matter here.
+        const want = this._toggleActive || this._holdActive;
+        if (want === this._active)
+            return;
+        if (want)
+            this._activate();
+        else
+            this._deactivate();
+    }
+
+    _activate() {
+        this._active = true;
+        // Read the pointer now so the first visible frame already has
+        // the hole under the cursor (no flash at the old position).
+        this._refreshPointer();
+        this._lastPaintX = null;
+        this._lastPaintY = null;
+        this._lastLensKey = null;
+        this._updateSize();
+        this._ensureTimer();
+        this._syncVisibility();
+        this._syncLens(true);
+    }
+
+    _deactivate() {
+        this._active = false;
+        this._zoomActive = false;
+        this._stopTimer();
+        this._lastPaintX = null;
+        this._lastPaintY = null;
+        this._lastLensKey = null;
         this._syncVisibility();
         this._syncLens(true);
     }
@@ -372,7 +455,12 @@ class SpotlightOverlay {
     }
 
     toggleZoom() {
-        if (!this._active) return;
+        // One-line usage log (see toggle()).
+        console.log(`[spotlight] toggleZoom called active=${this._active} zoomActive=${this._zoomActive} zoomFactor=${this._zoomFactor}`);
+        if (!this._active) {
+            Main.notify('Cursor Spotlight', 'Turn on the spotlight first, then toggle zoom.');
+            return;
+        }
         this._zoomActive = !this._zoomActive;
         if (this._zoomActive)
             this._refreshPointer();
@@ -418,12 +506,13 @@ class SpotlightOverlay {
         const scaleY = surfaceHeight / actorHeight;
 
         const dimOpacity = this._dimOpacity;
-        const outerRadiusX = Math.max(1, this._focusW * scaleX / 2);
-        const outerRadiusY = Math.max(1, this._focusH * scaleY / 2);
-        const minOuterRadius = Math.max(1, Math.min(outerRadiusX, outerRadiusY));
-        const edgeSoftness = Math.max(0, this._edgeSoftness) * Math.min(scaleX, scaleY);
-        const featherSize = Math.min(minOuterRadius, edgeSoftness);
-        const innerStop = Math.max(0, 1 - featherSize / minOuterRadius);
+        // Circular spotlight. A single radius keeps it round on mixed-DPI
+        // multi-monitor setups (mixed scale factors would distort it).
+        const scale = Math.min(scaleX, scaleY);
+        const radius = Math.max(1, this._focusRadius * scale);
+        const edgeSoftness = Math.max(0, this._edgeSoftness) * scale;
+        const featherSize = Math.min(radius, edgeSoftness);
+        const innerStop = Math.max(0, 1 - featherSize / radius);
         // Actor may be offset for multi-monitor bounds: convert stage
         // coordinates into actor-local surface coordinates.
         const actorX = area.x ?? 0;
@@ -439,7 +528,7 @@ class SpotlightOverlay {
 
         context.save();
         context.translate(centerX, centerY);
-        context.scale(outerRadiusX, outerRadiusY);
+        context.scale(radius, radius);
 
         // NOTE: must use the Cairo.RadialGradient constructor, like the
         // reference extension. context.createRadialGradient() does not
@@ -474,6 +563,11 @@ class SpotlightOverlay {
 
     destroy() {
         this._destroyed = true;
+        // Drop state directly: no activate/deactivate side effects during
+        // teardown, when the actors are about to go away.
+        this._active = false;
+        this._toggleActive = false;
+        this._holdActive = false;
         this._stopTimer();
         if (this._monitorsChangedId) {
             try {
@@ -520,9 +614,7 @@ class SpotlightOverlay {
         this._disconnectSettings();
         this._cachedGradient = null;
         try {
-            if (this._actor.get_parent() === Main.layoutManager.uiGroup)
-                Main.layoutManager.removeChrome(this._actor);
-            else if (this._actor.get_parent())
+            if (this._actor.get_parent())
                 this._actor.get_parent().remove_child(this._actor);
         } catch (e) {
         }
@@ -543,6 +635,7 @@ class SpotlightOverlay {
             this._lens = null;
             this._lensClone = null;
         }
+        this._lensMask = null;
         this._settings = null;
     }
 }
@@ -553,12 +646,29 @@ export default class CursorSpotlightExtension extends Extension {
         this._overlay = new SpotlightOverlay(this._settings);
 
         this._toggleHandler = () => {
+            console.log('[spotlight] toggle hotkey fired');
             if (this._overlay)
                 this._overlay.toggle();
         };
         this._zoomHandler = () => {
+            console.log('[spotlight] toggle-zoom hotkey fired');
             if (this._overlay)
                 this._overlay.toggleZoom();
+        };
+        this._holdHandler = (display, window, event, binding) => {
+            if (!this._overlay)
+                return;
+            // The binding is registered with TRIGGER_RELEASE, so this runs
+            // once per press and once per release. Tell them apart by the
+            // event type; older shells that do not pass the event here are
+            // never registered for hold (see supportsHold).
+            const type = event && typeof event.type === 'function' ? event.type() : null;
+            if (type === Clutter.EventType.KEY_PRESS)
+                this._overlay.setHoldActive(true);
+            else if (type === Clutter.EventType.KEY_RELEASE)
+                this._overlay.setHoldActive(false);
+            else
+                console.log('[spotlight] hold hotkey fired without a usable key event; ignored');
         };
 
         Main.wm.addKeybinding(
@@ -575,6 +685,20 @@ export default class CursorSpotlightExtension extends Extension {
             Shell.ActionMode.NORMAL | Shell.ActionMode.OVERVIEW,
             this._zoomHandler
         );
+
+        this._holdSupported = supportsHold(Config.PACKAGE_VERSION);
+        if (this._holdSupported) {
+            Main.wm.addKeybinding(
+                'hold',
+                this._settings,
+                Meta.KeyBindingFlags.IGNORE_AUTOREPEAT | TRIGGER_RELEASE,
+                Shell.ActionMode.NORMAL | Shell.ActionMode.OVERVIEW,
+                this._holdHandler
+            );
+        } else {
+            console.log(`[spotlight] hold hotkey unavailable on GNOME Shell ` +
+                `${Config.PACKAGE_VERSION}; requires ${HOLD_MIN_SHELL_MAJOR}+`);
+        }
     }
 
     disable() {
@@ -585,6 +709,12 @@ export default class CursorSpotlightExtension extends Extension {
         try {
             Main.wm.removeKeybinding('toggle-zoom');
         } catch (e) {
+        }
+        if (this._holdSupported) {
+            try {
+                Main.wm.removeKeybinding('hold');
+            } catch (e) {
+            }
         }
 
         if (this._overlay) {
@@ -597,5 +727,7 @@ export default class CursorSpotlightExtension extends Extension {
         this._settings = null;
         this._toggleHandler = null;
         this._zoomHandler = null;
+        this._holdHandler = null;
+        this._holdSupported = false;
     }
 }

@@ -26,7 +26,9 @@ dims the entire screen and leaves a configurable, soft-edged area around the
 mouse pointer undimmed (the "spotlight"). The spotlight follows the pointer.
 An optional zoom mode magnifies the spotlighted area by a configurable factor.
 Pressing the hotkey again hides the spotlight. The state is a toggle: the
-spotlight stays visible until the hotkey is pressed again.
+spotlight stays visible until the hotkey is pressed again. A separate,
+optional hold binding (GNOME Shell 48+) shows the spotlight only while the
+key is held.
 
 ## 3. Non-goals
 
@@ -53,6 +55,9 @@ new_project/
 ├── metadata.json
 ├── extension.js
 ├── prefs.js
+├── lib/
+│   ├── lens-effect.js
+│   └── shell-version.js
 ├── schemas/
 │   └── org.gnome.shell.extensions.cursor-spotlight.gschema.xml
 └── docs/
@@ -76,10 +81,10 @@ keys:
 | Key             | Type | Range          | Default       | Meaning                                    |
 | --------------- | ---- | -------------- | ------------- | ------------------------------------------ |
 | `toggle`        | `as` | —              | `['<Ctrl>F5']`| Keybinding that toggles the spotlight      |
+| `hold`          | `as` | —              | `['<Ctrl><Shift>F5']` | Keybinding that shows the spotlight only while held (GNOME Shell 48+) |
 | `toggle-zoom`   | `as` | —              | `['<Ctrl>F6']`| Keybinding that toggles zoom mode          |
 | `dim-opacity`   | `i`  | 0–100          | 75            | Darkness of the overlay, in percent        |
-| `focus-width`   | `i`  | >= 1           | 260           | Undimmed area width, in pixels             |
-| `focus-height`  | `i`  | >= 1           | 180           | Undimmed area height, in pixels            |
+| `focus-radius`  | `i`  | >= 1           | 130           | Radius of the undimmed spotlight circle    |
 | `edge-softness` | `i`  | >= 0           | 56            | Soft transition width at the edge, pixels  |
 | `zoom-factor`   | `d`  | 1.0–5.0        | 1.25          | Zoom multiplier (1.0 = no zoom)            |
 
@@ -105,17 +110,40 @@ combination; the extension checks active state independently.
 Each press flips the active state (on -> off, off -> on). When it becomes
 active, the overlay is shown; when inactive, it is hidden.
 
+### Hold hotkey press/release
+
+On GNOME Shell 48+ the hold binding is registered with
+`Meta.KeyBindingFlags.TRIGGER_RELEASE`, so the handler runs on both the key
+press and the key release and distinguishes them by the event type. Pressing
+shows the spotlight, releasing hides it. The hold state and the toggle state
+are independent: the effective state is `toggle OR hold`, so releasing the
+hold key does not cancel a latched toggle and vice versa. If a key release is
+swallowed (opening the overview, locking the screen), the hold state is
+dropped when those events occur so it cannot get stuck. On GNOME 45-47 the
+hold binding is not registered (the shell does not pass the key event to the
+handler there) and the preference is shown as unavailable.
+
 ### Zoom hotkey press
 
 When the spotlight is active, pressing the zoom hotkey toggles zoom mode.
 Zoom mode shows a live magnified lens of the spotlighted area: a
-`Clutter.Clone` of `global.window_group` (app windows + background, but not
+`Clutter.Clone` of `Main.layoutManager.uiGroup` (app windows + background, but not
 the dim overlay itself, so there is no feedback loop) sits directly below the
 overlay. The overlay dims the lens everywhere except the spotlight hole, where
 the magnified content shows through. The lens is GPU-composited: pointer
-tracking only updates its scale/position, never repaints it. The lens is
-rectangular (`focus-width` by `focus-height`, centered on the pointer) and is
-hidden together with the overlay while the overview is visible.
+tracking only updates its scale/position, never repaints it. The lens is a
+square (`2 * focus-radius` on a side) centered on the pointer, but it is
+clipped to the spotlight circle by a fragment shader, so the magnified area
+matches the circular hole instead of showing a rectangle. The lens is hidden
+together with the overlay while the overview is visible.
+
+The clip shader is provided by `lib/lens-effect.js`. It is applied to the
+lens actor and multiplies the premultiplied `cogl_color_out` by the radial
+coverage shared with the overlay hole. On GNOME Shell 45–50 the effect is a
+`Shell.GLSLEffect` (offscreen GLSL snippet); on GNOME Shell 51+ it is a
+`Clutter.ShaderEffect` with a `Cogl.Snippet`, since `Shell.GLSLEffect` was
+removed. The backend is chosen by feature detection at module load, and the
+rest of the extension only calls `createLensMaskEffect()` and `setMask()`.
 
 When the spotlight is inactive, pressing the zoom hotkey has no effect.
 
@@ -150,27 +178,26 @@ Algorithm:
 1. Fill the whole surface with black at `alpha = dim-opacity / 100`, using
    `Cairo.Operator.SOURCE`.
 2. Compute the pointer center in surface coordinates. Account for the HiDPI
-   scale factor: `scale = surfaceSize / actorSize`.
-3. Scale the context so that drawing a unit circle produces an ellipse with
-   radii `(focus-width / 2, focus-height / 2)`.
+   scale factor: `scale = min(surfaceWidth / actorWidth, surfaceHeight /
+   actorHeight)` (the smaller axis keeps the circle round if the axes ever
+   differ).
+3. Scale the context so that drawing a unit circle produces a circle of
+   surface radius `focus-radius * scale`.
 4. Create a `Cairo.RadialGradient` from the center (inner radius 0) to outer
    radius 1, with color stops:
    - stop 0.0: black, alpha 1.0
    - stop `innerStop`: black, alpha 1.0
    - stop 1.0: black, alpha 0.0
-   where `innerStop = max(0, 1 - feather / minRadius)` and
-   `feather = min(minRadius, edge-softness * scale)`, `minRadius` being the
-   smaller of the two ellipse radii.
+   where `innerStop = max(0, 1 - feather / radius)` and
+   `feather = min(radius, edge-softness * scale)`.
 5. Set `Cairo.Operator.DEST_OUT` and fill the unit circle.
 
-If zoom is active, apply a second pass: save the context, translate to the
-pointer, scale by `zoom-factor`, translate back, and redraw the spotlight
-content from the stage texture. The dim layer and the gradient mask remain
-unchanged; only the content inside the spotlight hole is magnified.
+The same `innerStop` and feather ratio are passed to the lens strip shader
+(`lib/lens-effect.js`), so the soft edge of the magnified lens and the soft
+edge of the spotlight hole coincide.
 
-NOTE: this paragraph describes the original Cairo-based idea, which is not
-implementable (no public stage-to-cairo API exists). The actual implementation
-uses a `Clutter.Clone` lens actor below the overlay, as described in
+The magnified content is not drawn here. It is a `Clutter.Clone` lens actor
+below the overlay, clipped to the circle by a fragment shader, as described in
 "Zoom hotkey press" above.
 
 Because `DEST_OUT` removes destination pixels proportionally to source alpha,
@@ -214,12 +241,28 @@ Main.wm.addKeybinding(
     Shell.ActionMode.NORMAL | Shell.ActionMode.OVERVIEW,
     zoomHandler
 );
+
+// GNOME Shell 48+ only: TRIGGER_RELEASE makes the handler run on the key
+// release too, and the shell passes the key event so press/release can be
+// told apart.
+Main.wm.addKeybinding(
+    'hold',
+    settings,
+    Meta.KeyBindingFlags.IGNORE_AUTOREPEAT | Meta.KeyBindingFlags.TRIGGER_RELEASE,
+    Shell.ActionMode.NORMAL | Shell.ActionMode.OVERVIEW,
+    holdHandler
+);
 ```
 
 - The binding name `'toggle'` must match the settings key name.
+- The binding name `'hold'` must match the settings key name.
 - The binding name `'toggle-zoom'` must match the settings key name.
-- Remove them on disable with `Main.wm.removeKeybinding('toggle')` and
+- Remove them on disable with `Main.wm.removeKeybinding('toggle')`,
+  `Main.wm.removeKeybinding('hold')`, and
   `Main.wm.removeKeybinding('toggle-zoom')`.
+- The hold handler distinguishes directions with `event.type()` against
+  `Clutter.EventType.KEY_PRESS` / `KEY_RELEASE` and is registered only when
+  the running shell major version is 48 or newer (`misc/config.js`).
 - `Meta` and `Shell` are GI modules imported from `gi://Meta` and `gi://Shell`.
 - Both bindings can share the same key combination; the extension checks
   active state independently and each handler acts on its own toggle.
@@ -272,7 +315,10 @@ Provide a `Makefile` with these targets:
 2. Pressing the hotkey dims the screen; the area around the pointer stays
    bright and follows the pointer.
 3. Pressing the hotkey again removes the dimming.
-4. Changing `dim-opacity`, `focus-width`, `focus-height`, `edge-softness`,
+3a. On GNOME Shell 48+, holding the hold key shows the spotlight until the
+    key is released; releasing while the toggle is latched leaves it on, and
+    opening the overview or locking the screen never leaves it stuck on.
+4. Changing `dim-opacity`, `focus-radius`, `edge-softness`,
    or `zoom-factor` (via `gnome-extensions prefs` or `dconf`) takes effect
    immediately.
 5. Pressing `toggle-zoom` while the spotlight is active toggles zoom mode.

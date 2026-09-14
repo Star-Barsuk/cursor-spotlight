@@ -1,7 +1,10 @@
 import Adw from 'gi://Adw';
 import Gdk from 'gi://Gdk';
 import Gtk from 'gi://Gtk';
+import * as Config from 'resource:///org/gnome/Shell/Extensions/js/misc/config.js';
 import {ExtensionPreferences} from 'resource:///org/gnome/Shell/Extensions/js/extensions/prefs.js';
+
+import {HOLD_MIN_SHELL_MAJOR, supportsHold} from './lib/shell-version.js';
 
 export default class CursorSpotlightPreferences extends ExtensionPreferences {
     fillPreferencesWindow(window) {
@@ -32,14 +35,23 @@ export default class CursorSpotlightPreferences extends ExtensionPreferences {
 
         this._addKeybindingRow(window, spotlightGroup, settings, 'toggle', 'Toggle spotlight');
 
+        if (supportsHold(Config.PACKAGE_VERSION)) {
+            this._addKeybindingRow(window, spotlightGroup, settings, 'hold',
+                'Hold spotlight (momentary)');
+        } else {
+            const unsupported = new Adw.ActionRow({
+                title: 'Hold spotlight',
+                subtitle: `Requires GNOME Shell ${HOLD_MIN_SHELL_MAJOR}+`,
+            });
+            unsupported.sensitive = false;
+            spotlightGroup.add(unsupported);
+        }
+
         this._addSpinRow(spotlightGroup, settings, settingsIds, 'dim-opacity',
             'Dim opacity', 'percent', 0, 100);
 
-        this._addSpinRow(spotlightGroup, settings, settingsIds, 'focus-width',
-            'Focus width', 'pixels', 1, 10000);
-
-        this._addSpinRow(spotlightGroup, settings, settingsIds, 'focus-height',
-            'Focus height', 'pixels', 1, 10000);
+        this._addSpinRow(spotlightGroup, settings, settingsIds, 'focus-radius',
+            'Focus radius', 'pixels', 1, 10000);
 
         this._addSpinRow(spotlightGroup, settings, settingsIds, 'edge-softness',
             'Edge softness', 'pixels', 0, 500);
@@ -73,12 +85,19 @@ export default class CursorSpotlightPreferences extends ExtensionPreferences {
     }
 
     _showCaptureDialog(window, settings, key, title, button) {
-        const dialog = new Adw.MessageDialog({
-            transient_for: window,
-            modal: true,
-            heading: `Set ${title}`,
-            body: 'Press a key combination, Esc to cancel, Backspace to clear',
-        });
+        const heading = `Set ${title}`;
+        const body = 'Press a key combination, Esc to cancel, Backspace to clear';
+        // Adw.MessageDialog is deprecated since GNOME 47; prefer AlertDialog
+        // when it is available so prefs keep working after its removal.
+        const hasAlertDialog = Adw.AlertDialog !== undefined;
+        const dialog = hasAlertDialog
+            ? new Adw.AlertDialog({heading, body})
+            : new Adw.MessageDialog({
+                transient_for: window,
+                modal: true,
+                heading,
+                body,
+            });
         dialog.add_response('cancel', 'Cancel');
 
         const keyController = new Gtk.EventControllerKey();
@@ -110,7 +129,10 @@ export default class CursorSpotlightPreferences extends ExtensionPreferences {
         });
 
         dialog.connect('response', () => dialog.close());
-        dialog.present();
+        if (hasAlertDialog)
+            dialog.present(window);
+        else
+            dialog.present();
     }
 
     _formatAccel(strv) {
