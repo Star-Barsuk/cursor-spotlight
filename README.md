@@ -44,8 +44,8 @@ From [extensions.gnome.org](https://extensions.gnome.org/) (once published), or
 from source:
 
 ```bash
-git clone https://github.com/Star-Barsuk/cursor-spotlight.git
-cd cursor-spotlight
+git clone https://github.com/Star-Barsuk/gnome-extension-cursor-spotlight.git
+cd gnome-extension-cursor-spotlight
 
 make install   # build + copy into ~/.local/share/gnome-shell/extensions
 # Log out and back in (Wayland picks up new extensions on login)
@@ -222,7 +222,7 @@ journalctl -f -o cat /usr/bin/gnome-shell | grep -i spotlight
 ## Contributing
 
 Issues and pull requests are welcome at
-<https://github.com/Star-Barsuk/cursor-spotlight>.
+<https://github.com/Star-Barsuk/gnome-extension-cursor-spotlight>.
 
 - Keep `extension.js` / `prefs.js` as thin entry points; put logic in
   `lib/` (shell process) or `prefs/` (preferences process).

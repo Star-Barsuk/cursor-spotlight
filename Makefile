@@ -68,6 +68,7 @@ lint:
 pot:
 	xgettext --from-code=UTF-8 --add-comments \
 		--keyword=_ --keyword=ngettext:1,2 \
+		--msgid-bugs-address=https://github.com/Star-Barsuk/gnome-extension-cursor-spotlight/issues \
 		--output=po/$(NAME).pot \
 		$(ALL_JS)
 

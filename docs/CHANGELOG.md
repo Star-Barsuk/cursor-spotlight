@@ -55,6 +55,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `Makefile` with build, install, uninstall, enable, disable, zip and lint
   targets.
 
-[Unreleased]: https://github.com/Star-Barsuk/cursor-spotlight/compare/v1.0.0...HEAD
-[1.0.0]: https://github.com/Star-Barsuk/cursor-spotlight/releases/tag/v1.0.0
-[0.1.0]: https://github.com/Star-Barsuk/cursor-spotlight/releases/tag/v0.1.0
+[Unreleased]: https://github.com/Star-Barsuk/gnome-extension-cursor-spotlight/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/Star-Barsuk/gnome-extension-cursor-spotlight/releases/tag/v1.0.0
+[0.1.0]: https://github.com/Star-Barsuk/gnome-extension-cursor-spotlight/releases/tag/v0.1.0

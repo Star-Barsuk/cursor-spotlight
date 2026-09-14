@@ -7,7 +7,7 @@
 msgid ""
 msgstr ""
 "Project-Id-Version: cursor-spotlight 1.0.0\n"
-"Report-Msgid-Bugs-To: https://github.com/Star-Barsuk/cursor-spotlight/issues\n"
+"Report-Msgid-Bugs-To: https://github.com/Star-Barsuk/gnome-extension-cursor-spotlight/issues\n"
 "POT-Creation-Date: 2026-09-14 00:00+0000\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
