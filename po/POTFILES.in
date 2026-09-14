@@ -1,0 +1,7 @@
+# List of source files that contain translatable strings.
+# Used by `make pot` to (re)generate po/cursor-spotlight.pot.
+extension.js
+prefs.js
+lib/*.js
+prefs/*.js
+schemas/org.gnome.shell.extensions.cursor-spotlight.gschema.xml

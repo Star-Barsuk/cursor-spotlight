@@ -5,5 +5,5 @@ schemas/gschemas.compiled
 *.zip
 _zipdir/
 
-# Session dumps (local debugging artifacts)
-session-*.md
+# Node tooling (optional, only if eslint is installed locally)
+node_modules/

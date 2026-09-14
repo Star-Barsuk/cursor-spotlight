@@ -1,0 +1,134 @@
+# Cursor Spotlight translation template.
+# Copyright (C) 2026 Star-Barsuk
+# This file is distributed under the same license as the Cursor Spotlight
+# package. Translators: use this file with po/<language>.po.
+#
+#, fuzzy
+msgid ""
+msgstr ""
+"Project-Id-Version: cursor-spotlight 1.0.0\n"
+"Report-Msgid-Bugs-To: https://github.com/Star-Barsuk/cursor-spotlight/issues\n"
+"POT-Creation-Date: 2026-09-14 00:00+0000\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language-Team: LANGUAGE <LL@li.org>\n"
+"Language: \n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=INTEGER; plural=EXPRESSION;\n"
+
+#: lib/spotlight.js
+msgid "Cursor Spotlight"
+msgstr ""
+
+#: lib/spotlight.js
+msgid "Turn on the spotlight first, then toggle zoom."
+msgstr ""
+
+#: prefs.js
+msgid "General"
+msgstr ""
+
+#: prefs.js
+msgid "Spotlight"
+msgstr ""
+
+#: prefs.js
+msgid "Toggle spotlight"
+msgstr ""
+
+#: prefs.js
+msgid "Hold spotlight (momentary)"
+msgstr ""
+
+#: prefs.js
+msgid "Hold spotlight"
+msgstr ""
+
+#: prefs.js
+#, javascript-format
+msgid "Requires GNOME Shell %d+"
+msgstr ""
+
+#: prefs.js
+msgid "Dim opacity"
+msgstr ""
+
+#: prefs.js
+msgid "percent"
+msgstr ""
+
+#: prefs.js
+msgid "Focus radius"
+msgstr ""
+
+#: prefs.js
+msgid "pixels"
+msgstr ""
+
+#: prefs.js
+msgid "Edge softness"
+msgstr ""
+
+#: prefs.js
+msgid "Zoom"
+msgstr ""
+
+#: prefs.js
+msgid "Toggle zoom"
+msgstr ""
+
+#: prefs.js
+msgid "Zoom factor"
+msgstr ""
+
+#: prefs.js
+msgid "x"
+msgstr ""
+
+#: prefs/keybinding-row.js
+#, javascript-format
+msgid "Set %s"
+msgstr ""
+
+#: prefs/keybinding-row.js
+msgid "Press a key combination, Esc to cancel, Backspace to clear"
+msgstr ""
+
+#: prefs/keybinding-row.js
+msgid "Cancel"
+msgstr ""
+
+#: prefs/keybinding-row.js
+msgid "Disabled"
+msgstr ""
+
+#. Schema summary
+#: schemas/org.gnome.shell.extensions.cursor-spotlight.gschema.xml
+msgid "Keybinding that toggles the spotlight on and off"
+msgstr ""
+
+#: schemas/org.gnome.shell.extensions.cursor-spotlight.gschema.xml
+msgid "Keybinding that shows the spotlight only while held. Requires GNOME Shell 48+. Empty disables it"
+msgstr ""
+
+#: schemas/org.gnome.shell.extensions.cursor-spotlight.gschema.xml
+msgid "Keybinding that toggles zoom mode while spotlight is active"
+msgstr ""
+
+#: schemas/org.gnome.shell.extensions.cursor-spotlight.gschema.xml
+msgid "Darkness of the overlay in percent (0 = transparent, 100 = fully black)"
+msgstr ""
+
+#: schemas/org.gnome.shell.extensions.cursor-spotlight.gschema.xml
+msgid "Radius of the circular undimmed spotlight area in pixels"
+msgstr ""
+
+#: schemas/org.gnome.shell.extensions.cursor-spotlight.gschema.xml
+msgid "Soft transition width at the spotlight edge in pixels"
+msgstr ""
+
+#: schemas/org.gnome.shell.extensions.cursor-spotlight.gschema.xml
+msgid "Zoom multiplier (1.0 = no zoom, 2.0 = double size)"
+msgstr ""

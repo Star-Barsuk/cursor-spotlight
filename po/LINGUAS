@@ -1,0 +1,4 @@
+# Translations for Cursor Spotlight.
+# Add a language code per line (e.g. `de`, `fr`) once a matching po/<lang>.po
+# file exists; `gnome-extensions pack --podir=po` compiles every language
+# listed here.

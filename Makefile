@@ -1,30 +1,36 @@
-UUID = cursor-spotlight@star-barsuk
+NAME = cursor-spotlight
+UUID = $(NAME)@star-barsuk
 EXTDIR = $(HOME)/.local/share/gnome-shell/extensions/$(UUID)
-ZIPFILE = $(UUID).zip
+ZIPFILE = $(UUID).shell-extension.zip
 
 SCHEMAS = schemas/org.gnome.shell.extensions.cursor-spotlight.gschema.xml
 COMPILED_SCHEMAS = schemas/gschemas.compiled
 
-JS_SRC = extension.js prefs.js
-SRC = $(JS_SRC) metadata.json
-LIB = lib
-LIB_SRC = $(wildcard $(LIB)/*.js)
-SCHEMA_DIR = schemas
+LIB_SRC = $(wildcard lib/*.js)
+PREFS_SRC = $(wildcard prefs/*.js)
+ALL_JS = extension.js prefs.js $(LIB_SRC) $(PREFS_SRC)
 LINT = tools/syntax-check.mjs
 
-.PHONY: build install uninstall enable disable zip lint clean
+# Compile translations only when there is at least one po/<lang>.po and
+# gettext (msgfmt) is installed; otherwise gnome-extensions pack would try to
+# build an empty po/ directory and fail.
+PODIR = $(shell [ -n "$$(ls po/*.po 2>/dev/null)" ] && command -v msgfmt >/dev/null 2>&1 && echo --podir=po)
+
+.PHONY: build install uninstall enable disable zip lint pot clean
 
 build: $(COMPILED_SCHEMAS)
 
 $(COMPILED_SCHEMAS): $(SCHEMAS)
-	glib-compile-schemas $(SCHEMA_DIR)
+	glib-compile-schemas schemas
 
-install: build
+# Pack with the official tool so the schema is handled and LICENSE and
+# translations are included. The compiled schema is intentionally left out of
+# the archive (EGO compiles it on install) and copied in for local installs.
+install: zip
 	rm -rf $(EXTDIR)
 	mkdir -p $(EXTDIR)
-	cp $(SRC) $(EXTDIR)/
-	cp -r $(LIB) $(EXTDIR)/
-	cp -r $(SCHEMA_DIR) $(EXTDIR)/
+	unzip -qo $(ZIPFILE) -d $(EXTDIR)
+	cp $(COMPILED_SCHEMAS) $(EXTDIR)/schemas/
 
 uninstall:
 	rm -rf $(EXTDIR)
@@ -37,26 +43,34 @@ disable:
 
 zip: build
 	rm -f $(ZIPFILE)
-	rm -rf _zipdir
-	mkdir -p _zipdir/$(UUID)
-	cp $(SRC) _zipdir/$(UUID)/
-	cp -r $(LIB) _zipdir/$(UUID)/
-	cp -r $(SCHEMA_DIR) _zipdir/$(UUID)/
-	cd _zipdir && zip -qr ../$(ZIPFILE) $(UUID)
-	rm -rf _zipdir
+	gnome-extensions pack --force \
+		--extra-source=lib \
+		--extra-source=prefs \
+		--extra-source=LICENSE \
+		$(PODIR) \
+		--schema=$(SCHEMAS) \
+		-o . \
+		.
 
 lint:
 	@if command -v gjs >/dev/null 2>&1; then \
 		echo "Syntax check (SpiderMonkey):"; \
-		gjs -m $(LINT) $(JS_SRC) $(LIB_SRC); \
+		gjs -m $(LINT) $(ALL_JS); \
 	else \
-		echo "gjs not found, skipping lint"; \
+		echo "gjs not found, skipping syntax check"; \
 	fi
 	@if command -v eslint >/dev/null 2>&1; then \
-		eslint $(JS_SRC) $(LIB_SRC); \
+		eslint $(ALL_JS); \
+	else \
+		echo "eslint not found, skipping eslint"; \
 	fi
+
+pot:
+	xgettext --from-code=UTF-8 --add-comments \
+		--keyword=_ --keyword=ngettext:1,2 \
+		--output=po/$(NAME).pot \
+		$(ALL_JS)
 
 clean:
 	rm -f $(COMPILED_SCHEMAS)
 	rm -f $(ZIPFILE)
-	rm -rf _zipdir
